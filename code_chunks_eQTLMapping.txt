@@ -1,0 +1,217 @@
+### CBAB/CABBIO-LNCC/MCTI
+### Ferramentas de Bioinformática para Análise de Dados de RNA-Seq
+### 3-14/Jul/2017 Petrópolis, RJ
+### CMasotti - 11Jul2017
+
+
+### eQTL Mapping - Hands On
+### CODE CHUNKS
+### Course directory: /home/cbab/cibele/
+
+##########################################################################
+### chunk 1 (Download and check input files)
+### bash
+wget "https://www.dropbox.com/s/c2tofijkxk4hves/input_files.zip" &
+unzip input_files.zip
+##########################################################################
+
+##########################################################################
+### chunk 2 (Test installation of tools)
+### bash
+vcftools --help
+bcftools --help
+vi
+R
+./home/cbab/cibele/QTLtools_1.1_Ubuntu14.04_x86_64 --help
+##########################################################################
+
+##########################################################################
+### chunk 3 (QTLtools cis nominal pass)
+### bash /home/cbab/cibele/input_files
+./home/cbab/cibele/QTLtools_1.1_Ubuntu14.04_x86_64 cis --vcf genotypes.chr22.vcf.gz --bed genes.50percent.chr22.bed.gz --cov genes.covariates.pc50.txt.gz --nominal 1 --out nominals_normal.txt --normal > nominal.log 2>&1 &
+
+head nominals.log
+head nominals_normal.txt
+
+#Output columns (nominals_normal.txt)
+#1. Gene ID
+#2. Gene Chromosome ID
+#3. Gene start genomic position
+#4. Gene send genomic position
+#5. Gene strand
+#6. Total variants tested in cis (±1Mb from TSS)
+#7. Distance gene-variant (accounting strand orientation)
+#8. Variant ID
+#9. Variant chromosome ID
+#10. Variant start genomic position
+#11. Variant end genomic position
+#12. Nominal P-value of Gene-variant association
+#13. Association regression slope (effect size)
+#14. Binary flag (1=top variant in cis)
+##########################################################################
+
+##########################################################################
+### chunk 4 (Generate permuted expression input)
+### R
+wd <- "/home/cbab/cibele/input_files"
+setwd(wd)
+
+exp <- read.table(file="genes.50percent.chr22.bed.gz", comment.char="@", header=TRUE)
+exp1 <- exp[,1:6]
+exp2 <- exp[,7:ncol(exp)]
+names_exp <- names(exp)
+exp2_shuffle <- sample(exp2)
+perm <- cbind(exp1,exp2_shuffle)
+names(perm) <- names_exp
+write.table(perm, file="perm_genes.50percent.chr22.bed", sep="\t", quote=FALSE, col.names=TRUE, row.names=FALSE)
+
+### bash /home/cbab/cibele/input_files                                                    
+vi perm_genes.50percent.chr22.bed
+# in vi insert mode (shift+i): insert # before chr in header
+# save file: (shift+:) then type wq to "write and quit" option
+
+### bash  /home/cbab/cibele/input_files  
+bgzip perm_genes.50percent.chr22.bed 
+tabix -p bed perm_genes.50percent.chr22.bed
+##########################################################################
+
+##########################################################################
+### chunk 5 (QTLtools cis nominal pass with permuted input)
+### bash /home/cbab/cibele/input_files 
+./home/cbab/cibele/QTLtools_1.1_Ubuntu14.04_x86_64 cis --vcf genotypes.chr22.vcf.gz --bed expression_permuted.bed.gz --cov genes.covariates.pc50.txt.gz --nominal 1 --out nominals_normal_permuted.txt --normal > nominal_permuted.log 2>&1 &
+##########################################################################
+
+##########################################################################
+### chunk 6 (Analyze preliminary results in R)
+### R
+wd <- "/home/cbab/cibele/input_files"
+setwd(wd)
+
+# install qvalue package
+source("https://bioconductor.org/biocLite.R")
+biocLite("qvalue")
+library(qvalue)
+
+obs <- read.table(file="nominals_normal.txt", header=FALSE, sep=" ")
+names(obs) <- c("pid", "pchr", "pstart", "pend", "pstrand", "TotCisVarTested", "TSSdist", "IdVar", "chrVar", "startVar", "endVar", "nominalPval", "slope", "topVar")
+
+perm <- read.table(file="nominals_normal_permuted.txt", header=FALSE, sep=" ")
+names(perm) <- c("pid", "pchr", "pstart", "pend", "pstrand", "TotCisVarTested", "TSSdist", "IdVar", "chrVar", "startVar", "endVar", "nominalPval", "slope", "topVar")
+
+expected <- runif(length(obs$nominalPval), 0, 1)
+
+### compare histograms of nominal P-values
+pdf("obsXpermXexpect.pdf")
+par(mfrow=c(2,2))
+hist(obs$nominalPval, main="Observed", xlab="P-values", xlim=c(0,1), col="cornsilk")
+hist(perm$nominalPval, main="Permuted", xlab="P-values", xlim=c(0,1), col="cornsilk")
+hist(expected, main="Expected", xlab = "P-values", 	xlim=c(0,1), col="cornsilk")
+dev.off()
+
+### QQplots: compare the tails P-values distributions
+png("obsXperXexpect_QQplots.png", bg="transparent")
+par(mfrow=c(2,2))
+qqplot(-log10(perm$nominalPval),-log10(obs$nominalPval), main="ObservedXPermuted", xlab="-log10(P-values) Permuted", ylab="-log10(P-values) Observed")
+abline(a=0,b=1,col="red")
+
+qqplot(-log10(expected),-log10(obs$nominalPval), main="ObservedXExpected", xlab="-log10(P-values) Expected", ylab="-log10(P-values) Observed")
+abline(a=0,b=1,col="red")
+
+qqplot(-log10(expected),-log10(perm$nominalPval), main="PermutedXExpected", xlab="-log10(P-values) Expected", ylab="-log10(P-values) Permuted")
+abline(a=0,b=1,col="red")
+dev.off()
+
+##########################################################################
+### chunk 7 (QTLtools cis permutation pass)
+### bash /home/cbab/cibele/input_files
+./home/cbab/cibele/QTLtools_1.1_Ubuntu14.04_x86_64 cis --vcf genotypes.chr22.vcf.gz --bed genes.50percent.chr22.bed.gz --cov genes.covariates.pc50.txt.gz --permute 1000 --out permutations_normal.txt --normal > permutations.log 2>&1 & 
+
+head permutations_normal.txt
+
+#Output columns (permutations_normal.txt)
+#1. Gene ID
+#2. Gene Chromosome ID
+#3. Gene start genomic position
+#4. Gene send genomic position
+#5. Gene strand
+#6. Total variants tested in cis (±1Mb from TSS)
+#7. Distance gene-variant (accounting strand orientation)
+#8. Best-associated variant ID (best eQTL)
+#9. Best variant chromosome ID
+#10. Best variant start genomic position
+#11. Best variant end genomic position
+#12. The number of degrees of freedom used to compute the P-values
+#13. Dummy
+#14. 1st parameter of fitted beta distribution
+#15. 2nd parameter of fitted beta distribution (number of independent tests in #the region)
+#16. Nominal P-value of top variant-associated in cis
+#17. Association regression slope (effect size)
+#18. Association P-value of top variant adjusted by number of variants tested in #cis (empirical P-value)
+#19. Association P-value of top variant adjusted by number of variants tested in #cis (fitted beta distribution) # P-values to use in subsequent analyses
+##########################################################################
+
+##########################################################################
+### chunk 8 (Estimate FDR from permutation pass)
+### R
+
+wd <- "/home/cbab/cibele/input_files/"
+set(wd)
+
+res <- read.table(file="permutations_normal.txt", header=FALSE)
+names(res) <- c("pid", "pchr", "pstart", "pend", "pstrand", "TotCisVarTested", "TSSdist", "BestIdVar", "BestchrVar", "BeststartVar", "BestendVar", "NdF", "dummy", "beta-par1", "NIndepTests", "nominalPval", "slope", "empiricalAdjPval", "betaAdjPval")
+
+library(qvalue)
+res <- res[!is.na(res$betaAdjPval),]
+res$qval <- qvalue(res$betaAdjPval)$qvalue
+write.table(res[which(res$qval<=0.05),], file="results.genes.significant.txt", quote=FALSE, row.names=FALSE, col.names=TRUE)
+
+pi1 <- 1-qvalue(res$betaAdjPval)$pi0
+pi1  # (π1= proportion significant genes)
+
+# to plot a few eQTL examples (the fist fourth best eQTLs)
+res_FDR05 <- res[which(res$qval<=0.05),]
+head(res_FDR05[order(res_FDR05$betaAdjPval),c(1,8,19)])
+   #pid               BestIdVar   betaAdjPval                   
+   #ENSG00000183172.8 22_42466509 5.57966e-64
+   #ENSG00000260065.1 22_26921725 1.28378e-59
+   #ENSG00000273295.1 22_24266954 2.90029e-57
+   #ENSG00000184674.8 22_24334948 2.08081e-54
+
+res_FDR05_to_plot <- res_FDR05[order(res_FDR05$betaAdjPval),c(1,8,19)] 
+write.table(res_FDR05_to_plot[1:4,1], file="phenotypes_to_plot.txt", quote=FALSE, row.names=FALSE, col.names=FALSE)
+write.table(res_FDR05_to_plot[1:4,2], file="genotypes_to_plot.txt", quote=FALSE, row.names=FALSE, col.names=FALSE)
+##########################################################################
+
+##########################################################################
+### chunk 9 (use QTLtools extract eQTL data to plot)
+### bash /home/cbab/cibele/input_files/
+
+./home/cbab/cibele/QTLtools_1.1_Ubuntu14.04_x86_64 extract --vcf genotypes.chr22.vcf.gz --bed genes.50percent.chr22.bed.gz --include-sites genotypes_to_plot.txt --include-phenotypes phenotypes_to_plot.txt --out eQTLs_FDR05_data_to_plot_extract > extract_eqtls_data_to_plot.log 2>&1 &
+
+# outputs: 
+# eQTLs_FDR05_data_to_plot_extract.header.txt
+# eQTLs_FDR05_data_to_plot_extract.content.txt.gz
+# extract_eqtls_data_to_plot.log
+
+### R (/home/cbab/cibele/input_files)
+
+data <- read.table(file="eQTLs_FDR05_data_to_plot_extract.content.txt.gz", header=TRUE)
+
+pdf("best_eQTL_plots.pdf")
+par(mfrow=c(2,2))
+
+plot(data[,5] ~ jitter(data[,9],1), xlab=colnames(data)[5], ylab=colnames(data)[9], col="dodgerblue", main="eQTL1")
+
+plot(data[,4] ~ jitter(data[,8],1), xlab=colnames(data)[4], ylab=colnames(data)[8], col="dodgerblue", main="eQTL2")
+ 
+plot(data[,2] ~ jitter(data[,6],1), xlab=colnames(data)[2], ylab=colnames(data)[6], col="dodgerblue", main="eQTL3")
+
+plot(data[,3] ~ jitter(data[,7],1), xlab=colnames(data)[3], ylab=colnames(data)[7], col="dodgerblue", main="eQTL4")
+ 
+dev.off()
+##########################################################################
+
+
+
+ 
+
