@@ -199,15 +199,14 @@ data <- read.table(file="eQTLs_FDR05_data_to_plot_extract.content.txt.gz", heade
 
 pdf("best_eQTL_plots.pdf")
 par(mfrow=c(2,2))
-
 plot(data[,5] ~ jitter(data[,9],1), xlab=colnames(data)[5], ylab=colnames(data)[9], col="dodgerblue", main="eQTL1")
-
+abline(lm(data[,5] ~ data[,9]), col="red")
 plot(data[,4] ~ jitter(data[,8],1), xlab=colnames(data)[4], ylab=colnames(data)[8], col="dodgerblue", main="eQTL2")
- 
+abline(lm(data[,4] ~ data[,8]), col="red")
 plot(data[,2] ~ jitter(data[,6],1), xlab=colnames(data)[2], ylab=colnames(data)[6], col="dodgerblue", main="eQTL3")
-
+abline(lm(data[,2] ~ data[,6]), col="red")
 plot(data[,3] ~ jitter(data[,7],1), xlab=colnames(data)[3], ylab=colnames(data)[7], col="dodgerblue", main="eQTL4")
- 
+abline(lm(data[,3] ~ data[,7]), col="red") 
 dev.off()
 ##########################################################################
 
